@@ -1,0 +1,3 @@
+Using 20 robots with the progress barrier certificate.
+Experiment completed successfully in 21.38 seconds.
+Minimum h value across all barrier certificates: 0.0024

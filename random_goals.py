@@ -54,7 +54,7 @@ def parse_cli_args() -> tuple[str, bool, bool, bool, int, int]:
         "--barrier",
         type=str,
         default="progress",
-        choices=["progress", "decentralized", "centralized", "double", "increasing", "local-increasing"],
+        choices=["progress", "decentralized", "centralized", "double", "increasing", "local-increasing", "smart-progress"],
         help="The barrier certificate to use for collision avoidance.",
     )
     parser.add_argument(
@@ -123,7 +123,7 @@ def main():
     controller = create_si_position_controller(velocity_magnitude_limit=0.15)
     si_to_uni, uni_to_si = create_si_to_uni_mapping()
     match barrier:
-            case "progress" | "increasing" | "local-increasing":
+            case "progress" | "increasing" | "local-increasing" | "smart-progress":
                 barrier_certificates = [
                     DecentralizedProgressPriorityBarrier(
                         safety_radius = SAFETY_RADIUS,
@@ -191,6 +191,13 @@ def main():
         if barrier == "progress":
             for i in range(num_robots):
                 barrier_certificates[i].set_priority_level(i)
+        elif barrier == "smart-progress":
+            distances = np.linalg.norm(x_si - goals[goal_idx, :2, :num_robots], axis=0)
+            distances = [(distance, i) for i, distance in enumerate(distances)]
+            distances.sort(key=lambda x: x[0], reverse=True)
+            priority_orders = [i for _, i in distances]
+            for i in range(num_robots):
+                barrier_certificates[i].set_priority_level(priority_orders[i])
         while np.linalg.norm(x_si - goals[goal_idx, :2, :num_robots]) > GOAL_TOLERANCE:
             x = r.get_poses()
             x_si = uni_to_si(x)
@@ -211,7 +218,9 @@ def main():
                                     barrier_certificates[robot_id].increase_priority_level()
                     completion_times[goal_idx - 1, id] = elapsed_time
             complete_ids |= set(completed_ids)
-            if barrier == "progress" or barrier == "double" or barrier == "increasing" or barrier == "local-increasing":
+            if barrier == "progress" or barrier == "double" or \
+                barrier == "increasing" or barrier == "local-increasing" or \
+                barrier == "smart-progress":
                 for i in complete_ids:
                     barrier_certificates[i].set_priority_level(num_robots)
 
@@ -255,7 +264,7 @@ def main():
                 case "centralized":
                     dxi = barrier_certificates[0](x_si, dxi)
                     barrier_certificates[0].show(x_si, axes)
-                case "progress":
+                case "progress" | "smart-progress":
                     for i in range(num_robots):
                         dxi[:, i] = barrier_certificates[i](
                             x_si[:, i],
@@ -265,7 +274,10 @@ def main():
                         if np.linalg.norm(dxi[:, i]) < 0.01 and i in complete_ids and np.linalg.norm(x_si[:, i] - goals[goal_idx, :2, i]) > GOAL_EPSILON:
                             print("REDISTRIBUTING")
                             complete_ids.remove(i)
-                            barrier_certificates[i].set_priority_level(i)
+                            if barrier == "progress":
+                                barrier_certificates[i].set_priority_level(i)
+                            elif barrier == "smart-progress":
+                                barrier_certificates[i].set_priority_level(priority_orders.index(i))
                             dxi[:, i] = barrier_certificates[i](
                                 x_si[:, i],
                                 x_si[:, [j for j in range(num_robots) if j != i]],
@@ -296,8 +308,8 @@ def main():
     if ROBOTARIUM_SUBMISSION:
         np.save("completion_times.npy", completion_times)
     else:
-        os.makedirs(f"random_goals/{barrier}/completion_times/{experiment_num}", exist_ok=True)
-        np.save(f"random_goals/{barrier}/completion_times/{experiment_num}/{num_robots}.npy", completion_times)
+        os.makedirs(f"random_goals/{barrier}/{num_robots}/{experiment_num}", exist_ok=True)
+        np.save(f"random_goals/{barrier}/{num_robots}/{experiment_num}/completion_times.npy", completion_times)
     r.debug()
 
 

@@ -1,0 +1,3 @@
+Using 20 robots with the centralized barrier.
+Experiment completed successfully in 41.88 seconds.
+Minimum h value across all barrier certificates: -0.0056

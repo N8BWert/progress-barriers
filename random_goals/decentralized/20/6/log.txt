@@ -1,0 +1,3 @@
+Using 20 robots with the decentralized barrier certificate.
+Experiment completed successfully in 28.02 seconds.
+Minimum h value across all barrier certificates: -0.0015

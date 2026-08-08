@@ -1,0 +1,5 @@
+Using 16 robots with the progress barrier.
+REDISTRIBUTING
+REDISTRIBUTING
+Experiment completed successfully in 53.89 seconds.
+Minimum h value across all barrier certificates: 0.0011

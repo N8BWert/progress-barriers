@@ -1,0 +1,3 @@
+Using 20 robots with the decentralized barrier certificate.
+Deadlock detected after 53.30 seconds.
+Minimum h value across all barrier certificates: -0.0036
