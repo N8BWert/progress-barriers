@@ -479,6 +479,255 @@ class DecentralizedCircularBarrierNarrowHallway(DecentralizedCircularBarrier):
             return np.zeros(2)
         return safe_velocities.flatten()
 
+
+class DecentralizedCircularBarrierSwappingHallway(DecentralizedCircularBarrierNarrowHallway):
+    """
+    A decentralized circular barrier certificate for the swapping hallway experiment
+    """
+
+    def __init__(
+        self,
+        safety_radius: float = 0.15,
+        magnitude_limit: float = 0.2,
+        class_k_function: ClassKFunction = LinearClassKFunction(1.0),
+        left_lines: Optional[tuple[list[np.ndarray], list[np.ndarray]]] = None,
+        top_lines: Optional[tuple[list[np.ndarray], list[np.ndarray]]] = None,
+        right_lines: Optional[tuple[list[np.ndarray], list[np.ndarray]]] = None,
+        bottom_lines: Optional[tuple[list[np.ndarray], list[np.ndarray]]] = None,
+        center_points: Optional[list[np.ndarray]] = None
+    ):
+        super().__init__(
+            safety_radius,
+            magnitude_limit,
+            class_k_function
+        )
+        self.left_lines = left_lines
+        self.top_lines = top_lines
+        self.right_lines = right_lines
+        self.bottom_lines = bottom_lines
+        self.center_points = center_points
+
+    def h_point(self, x: np.ndarray, p: np.ndarray) -> float:
+        """
+        Calculate the h-value for the end point on a line segment
+
+        Args:
+            x (np.ndarray): The position of the agent. (2,)
+            p (np.ndarray): The point defining the end of the line segment. (2,)
+        Returns:
+            float: The h-value for the point.
+        """
+        diff = x[:2] - p
+        return np.dot(diff, diff) - (self.safety_radius / 2) ** 2
+
+    def grad_h_point(self, x: np.ndarray, p: np.ndarray) -> np.ndarray:
+        """
+        Calculate the gradient of the h-value for the end point on a line segment.
+
+        Args:
+            x (np.ndarray): The position of the agent. (2,)
+            p (np.ndarray): The point defining the end of the line segment. (2,)
+        Returns:
+            np.ndarray: The gradient of the h-value for the point.
+        """
+        diff = x[:2] - p
+        return 2 * diff
+
+    def get_segment(
+        self,
+        pose: np.ndarray
+    ) -> int:
+        """
+        To make things a bit easier, I broke the world into segments (a picture is below),
+        then I toggle on the appropriate barriers based on which segment the agent is in.
+
+                    [7]
+                    ||
+                     6
+                    ||
+        [1] == 2 == [3] == 4 == [5]
+                    ||
+                     8
+                    ||
+                    [9]
+
+        Args:
+            pose (np.ndarray): The current pose of the agent.
+        Returns:
+            int: The segment number that the agent is currently in.
+        """
+        if pose[0] < self.left_lines[0][1][0]:
+            return 1
+        elif pose[0] > self.right_lines[0][1][0]:
+            return 5
+        elif pose[1] > self.top_lines[0][1][1]:
+            return 7
+        elif pose[1] < self.bottom_lines[0][1][1]:
+            return 9
+        elif self.left_lines[0][1][0] <= pose[0] <= self.center_points[0][0]:
+            return 2
+        elif self.center_points[1][0] <= pose[0] <= self.right_lines[0][1][0]:
+            return 4
+        elif self.bottom_lines[0][1][1] <= pose[1] <= self.center_points[2][1]:
+            return 8
+        elif self.center_points[2][1] <= pose[1] <= self.top_lines[0][1][1]:
+            return 6
+        else:
+            return 3
+
+    def apply(
+        self,
+        pose: np.ndarray,
+        obstacle_poses: np.ndarray,
+        velocity: np.ndarray,
+    ) -> np.ndarray:
+        """
+        Apply the decentralized circular barrier certificate with additional constraints
+        for the swapping hallway experiment.
+
+        Args:
+            pose (np.ndarray): The current pose of the agent.
+            obstacle_poses (np.ndarray): The poses of the obstacles.
+            velocity (np.ndarray): The current velocity of the agent.
+        Returns:
+            np.ndarray: The control input for the agent. 
+        """
+        num_constraints = obstacle_poses.shape[1] + 8 + 6
+        A = np.zeros((num_constraints, 2))
+        b = np.zeros(num_constraints)
+
+        # Apply obstacle constraints
+        for i in range(obstacle_poses.shape[1]):
+            h = self.h(pose, obstacle_poses[:, i])
+            grad_h = self.grad_h(pose, obstacle_poses[:, i])
+            A[i, :] = -grad_h
+            b[i] = self.class_k_function(h)
+
+        # Apply Magnitude Constraints (8-sided approximation of the l2-norm)
+        limit = self.magnitude_limit * np.cos(np.pi / 8)
+
+        # vx <= magnitude_limit
+        A[obstacle_poses.shape[1], 0] = 1.0
+        b[obstacle_poses.shape[1]] = limit
+
+        # 1/sqrt(2) * (vx + vy) <= magnitude_limit
+        A[obstacle_poses.shape[1] + 1, :] = [1.0 / np.sqrt(2), 1.0 / np.sqrt(2)]
+        b[obstacle_poses.shape[1] + 1] = limit
+
+        # vy <= magnitude_limit
+        A[obstacle_poses.shape[1] + 2, 1] = 1.0
+        b[obstacle_poses.shape[1] + 2] = limit
+
+        # 1/sqrt(2) * (-vx + vy) <= magnitude_limit
+        A[obstacle_poses.shape[1] + 3, :] = [-1.0 / np.sqrt(2), 1.0 / np.sqrt(2)]
+        b[obstacle_poses.shape[1] + 3] = limit
+
+        # -vx <= magnitude_limit
+        A[obstacle_poses.shape[1] + 4, 0] = -1.0
+        b[obstacle_poses.shape[1] + 4] = limit
+
+        # 1/sqrt(2) * (-vx - vy) <= magnitude_limit
+        A[obstacle_poses.shape[1] + 5, :] = [-1.0 / np.sqrt(2), -1.0 / np.sqrt(2)]
+        b[obstacle_poses.shape[1] + 5] = limit
+
+        # -vy <= magnitude_limit
+        A[obstacle_poses.shape[1] + 6, 1] = -1.0
+        b[obstacle_poses.shape[1] + 6] = limit
+
+        # 1/sqrt(2) * (vx - vy) <= magnitude_limit
+        A[obstacle_poses.shape[1] + 7, :] = [1.0 / np.sqrt(2), -1.0 / np.sqrt(2)]
+        b[obstacle_poses.shape[1] + 7] = limit
+
+        # I have separated the world into sections, here is a map of what I mean
+        #
+        #             [7]
+        #             ||
+        #              6
+        #             ||
+        # [1] == 2 == [3] == 4 == [5]
+        #             ||
+        #              8
+        #             ||
+        #             [9]
+        #
+        segment = self.get_segment(pose)
+        if segment == 3:
+            for i, center_point in enumerate(self.center_poins):
+                h = self.h_point(pose, center_point)
+                grad_h = self.grad_h_point(pose, center_point)
+                A[obstacle_poses.shape[1] + 8 + i, :] = -grad_h
+                b[obstacle_poses.shape[1] + 8 + i] = self.class_k_function(h)
+        else:
+            # Find the line segments
+            l1, l2 = None, None
+            match segment:
+                case 1:
+                    l1 = self.left_lines[0][0]
+                    l2 = self.left_lines[1][0]
+                case 2:
+                    l1 = self.left_lines[0][1]
+                    l2 = self.left_lines[1][1]
+                case 4:
+                    l1 = self.right_lines[0][1]
+                    l2 = self.right_lines[1][1]
+                case 5:
+                    l1 = self.right_lines[0][0]
+                    l2 = self.right_lines[1][0]
+                case 6:
+                    l1 = self.top_lines[0][1]
+                    l2 = self.top_lines[1][1]
+                case 7:
+                    l1 = self.top_lines[0][0]
+                    l2 = self.top_lines[1][0]
+                case 8:
+                    l1 = self.bottom_lines[0][1]
+                    l2 = self.bottom_lines[1][1]
+                case 9:
+                    l1 = self.bottom_lines[0][0]
+                    l2 = self.bottom_lines[1][0]
+
+            # Apply the first line barrier
+            h1 = self.h_line_segment(
+                pose[:2],
+                l1[0],
+                l1[1]
+            )
+            h1_grad = self.grad_h_line_segment(
+                pose[:2],
+                l1[0],
+                l1[1]
+            )
+            A[obstacle_poses.shape[1] + 8, :] = -h1_grad[0]
+            b[obstacle_poses.shape[1] + 8] = self.class_k_function(h1[0])
+            A[obstacle_poses.shape[1] + 9, :] = -h1_grad[1]
+            b[obstacle_poses.shape[1] + 9] = self.class_k_function(h1[1])
+            A[obstacle_poses.shape[1] + 10, :] = -h1_grad[2]
+            b[obstacle_poses.shape[1] + 10] = self.class_k_function(h1[2])
+
+            # Apply the second line barrier
+            h2 = self.h_line_segment(
+                pose[:2],
+                l2[0],
+                l2[1]
+            )
+            h2_grad = self.grad_h_line_segment(
+                pose[:2],
+                l2[0],
+                l2[1]
+            )
+            A[obstacle_poses.shape[1] + 11, :] = -h2_grad[0]
+            b[obstacle_poses.shape[1] + 11] = self.class_k_function(h2[0])
+            A[obstacle_poses.shape[1] + 12, :] = -h2_grad[1]
+            b[obstacle_poses.shape[1] + 12] = self.class_k_function(h2[1])
+            A[obstacle_poses.shape[1] + 13, :] = -h2_grad[2]
+            b[obstacle_poses.shape[1] + 13] = self.class_k_function(h2[2])
+
+        safe_velocities = self._solve_qp(velocity.reshape(2, 1), A, b)
+        if safe_velocities is None:
+            return np.zeros(2)
+        return safe_velocities.flatten()
+
+
 class DecentralizedProgressPriorityBarrier(BarrierCertificate):
     """
     A decentralized barrier certificate using a priority-based outer progress barrier
