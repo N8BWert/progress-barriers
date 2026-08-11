@@ -1,0 +1,3 @@
+Using 18 robots with the progress barrier.
+Deadlock detected after 236.97 seconds.
+Minimum h value across all barrier certificates: -0.0013

@@ -45,6 +45,8 @@ SAFETY_RADIUS: float = 0.16
 MAXIMUM_PRIORITY_RADIUS: float = 0.3
 # The communication radius for the local-increasing barrier certificate (in meters)
 COMMS_RADIUS: float = 0.5
+# The trial number
+TRIAL_NUM: int = os.getenv("TRIAL_NUM", 0)
 
 # The left goal line X
 LEFT_GOAL_X: float = -1.0
@@ -227,7 +229,7 @@ def main():
         show_figure = not hide_figure,
         sim_in_real_time = run_in_real_time,
         initial_conditions = initial_poses,
-        skip_initialization = skip_initialization
+        skip_initialization = skip_initialization,
     )
     axes = r._axes_handle
     draw_goal_patches(axes)
@@ -413,8 +415,8 @@ def main():
     if ROBOTARIUM_SUBMISSION:
         np.save("completion_times.npy", completion_times)
     else:
-        os.makedirs(f"narrow_hallway/{barrier}/{num_robots}", exist_ok=True)
-        np.save(f"narrow_hallway/{barrier}/{num_robots}/completion_times.npy", completion_times)
+        os.makedirs(f"narrow_hallway/{barrier}/{num_robots}/{TRIAL_NUM}", exist_ok=True)
+        np.save(f"narrow_hallway/{barrier}/{num_robots}/{TRIAL_NUM}/completion_times.npy", completion_times)
     r.debug()
 
 if __name__ == "__main__":
